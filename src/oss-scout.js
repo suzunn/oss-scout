@@ -1,5 +1,20 @@
 const DEFAULT_LABELS = ["good first issue", "help wanted"];
 
+/**
+ * Parse CLI flags into a normalized options object.
+ *
+ * @param {string[]} args Raw command line arguments without the Node executable or script path.
+ * @returns {{
+ *   format: "json" | "markdown",
+ *   help: boolean,
+ *   issuesPerRepo: number,
+ *   labels: string[],
+ *   language?: string,
+ *   minStars: number,
+ *   pushedAfter: string,
+ *   repoLimit: number,
+ * }}
+ */
 export function parseArgs(args) {
   const options = {
     format: "markdown",
@@ -55,6 +70,12 @@ export function parseArgs(args) {
   return options;
 }
 
+/**
+ * Convert parsed options into the plan consumed by the scout runner.
+ *
+ * @param {ReturnType<typeof parseArgs>} options Normalized CLI options.
+ * @returns {{issueLimit: number, labels: string[], repoLimit: number, repositoryQuery: string}}
+ */
 export function buildPlan(options) {
   return {
     issueLimit: options.issuesPerRepo,
@@ -64,6 +85,12 @@ export function buildPlan(options) {
   };
 }
 
+/**
+ * Build the GitHub repository search query from the selected filters.
+ *
+ * @param {{language?: string, minStars: number, pushedAfter: string}} options Repository search filters.
+ * @returns {string}
+ */
 export function buildRepositoryQuery(options) {
   const parts = [
     `stars:>=${options.minStars}`,
@@ -78,10 +105,26 @@ export function buildRepositoryQuery(options) {
   return parts.join(" ");
 }
 
+/**
+ * Build a GitHub issue search query for one repository and label.
+ *
+ * @param {{fullName: string}} repo Repository metadata from GitHub search.
+ * @param {string} label Issue label to search for.
+ * @returns {string}
+ */
 export function buildIssueQuery(repo, label) {
   return `repo:${repo.fullName} state:open is:issue label:${quoteIfNeeded(label)}`;
 }
 
+/**
+ * Create a small GitHub Search API client for repositories and issues.
+ *
+ * @param {{token?: string, userAgent?: string}} [options] Optional GitHub API settings.
+ * @returns {{
+ *   searchRepositories(query: string, limit: number): Promise<Array<object>>,
+ *   searchIssues(query: string, limit: number): Promise<Array<object>>,
+ * }}
+ */
 export function createGitHubClient({ token, userAgent } = {}) {
   return {
     async searchRepositories(query, limit) {
@@ -121,6 +164,13 @@ export function createGitHubClient({ token, userAgent } = {}) {
   };
 }
 
+/**
+ * Search repositories, collect matching issues by label, and remove duplicate issues.
+ *
+ * @param {{searchRepositories(query: string, limit: number): Promise<Array<object>>, searchIssues(query: string, limit: number): Promise<Array<object>>}} client GitHub search client.
+ * @param {{issueLimit: number, labels: string[], repoLimit: number, repositoryQuery: string}} plan Search plan built from CLI options.
+ * @returns {Promise<{generatedAt: string, plan: object, results: Array<{repo: object, issues: Array<object>}>}>}
+ */
 export async function scout(client, plan) {
   const repositories = await client.searchRepositories(plan.repositoryQuery, plan.repoLimit);
   const results = [];
@@ -152,6 +202,12 @@ export async function scout(client, plan) {
   };
 }
 
+/**
+ * Render a scout result as a human-readable Markdown report.
+ *
+ * @param {{generatedAt: string, plan: {labels: string[], repositoryQuery: string}, results: Array<{repo: {description?: string, fullName: string, language?: string, pushedAt: string, stars: number}, issues: Array<{labels: string[], number: number, title: string, updatedAt: string, url: string}>}>}} result Scout result payload.
+ * @returns {string}
+ */
 export function renderMarkdown(result) {
   const lines = [
     "# OSS Scout Report",
@@ -185,6 +241,12 @@ export function renderMarkdown(result) {
   return lines.join("\n").trimEnd();
 }
 
+/**
+ * Render a scout result as pretty-printed JSON.
+ *
+ * @param {object} result Scout result payload.
+ * @returns {string}
+ */
 export function renderJson(result) {
   return JSON.stringify(result, null, 2);
 }
